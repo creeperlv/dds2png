@@ -170,7 +170,9 @@ namespace dds2png
                 var format = image.Format switch
                 {
                     ImageFormat.Rgba32 => PixelFormat.Format32bppArgb,
-                    _ => throw new NotImplementedException(),
+                    ImageFormat.Rgb24 => PixelFormat.Format24bppRgb,
+                    ImageFormat.Rgb8 => PixelFormat.Format8bppIndexed,
+                    _ => throw new Exception("Unsupported:"+image.Format.ToString()),
                 };
                 var handle = GCHandle.Alloc(image.Data, GCHandleType.Pinned);
                 try
@@ -178,6 +180,13 @@ namespace dds2png
                     var data = Marshal.UnsafeAddrOfPinnedArrayElement(image.Data, 0);
                     var bitmap = new Bitmap(image.Width, image.Height, image.Stride, format, data);
                     bitmap.Save(_o, System.Drawing.Imaging.ImageFormat.Png);
+                }
+                catch (Exception e)
+                {
+                    Output.SetForeground(ConsoleColor.Red);
+                    Output.WriteLine("Error:");
+                    Output.WriteLine(e);
+                    Output.ResetColor();
                 }
                 finally
                 {
