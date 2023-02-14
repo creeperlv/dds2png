@@ -13,6 +13,7 @@ namespace dds2png
         public bool Quiet = false;
         public bool ShowHelp = false;
         public bool ShowVersion = false;
+        public bool SkipExisting = false;
         public List<string> Input = new List<string>();
         public List<string> Output = new List<string>();
         public static Arguments ProcessArguments(string[] args)
@@ -46,6 +47,10 @@ namespace dds2png
                     case "-Q":
                     case "--QUIET":
                         _args.Quiet = true;
+                        break;
+                    case "-S":
+                    case "--SKIP-EXISTING":
+                        _args.SkipExisting = true;
                         break;
 
                 }
@@ -85,16 +90,18 @@ namespace dds2png
                 Output.WriteLine("\t\tShow this help.");
                 Output.WriteLine("\t-V");
                 Output.WriteLine("\t\tShow version info.");
+                Output.WriteLine("\t-S");
+                Output.WriteLine("\t\tSkip existing converted files.");
                 Output.WriteLine("Example:");
                 Output.WriteLine("\tdds2png -i ../../samples/**/*.dds -o ../../output");
             }
             if (a.ShowVersion)
             {
                 var dds2png = typeof(Program).Assembly;
-                var Pfim= typeof(Pfimage).Assembly;
+                var Pfim = typeof(Pfimage).Assembly;
                 Output.Write("DDS2PNG:");
                 Output.SetForeground(ConsoleColor.Green);
-                Output.Write(""+dds2png.GetName().Version);
+                Output.Write("" + dds2png.GetName().Version);
                 Output.ResetColor();
                 Output.WriteLine();
                 Output.Write("Pfim:");
@@ -106,7 +113,7 @@ namespace dds2png
             for (int i = 0; i < a.Input.Count; i++)
             {
                 string output = null;
-                if(a.Output.Count > 0)
+                if (a.Output.Count > 0)
                 {
                     a.Output.Last();
                 }
@@ -114,24 +121,25 @@ namespace dds2png
                 {
                     output = a.Output[i];
                 }
-                INPUT(a.Input[i], output);
+                INPUT(a.Input[i], output,a.SkipExisting);
             }
         }
-        static void DOUBLE_ASTERISK(DirectoryInfo BaseDir,DirectoryInfo dir, string name,string Output) {
+        static void DOUBLE_ASTERISK(DirectoryInfo BaseDir, DirectoryInfo dir, string name, string Output, bool SkipExisting)
+        {
             var SubD = dir.EnumerateDirectories();
             var SubF = dir.EnumerateFiles(name);
             foreach (var item in SubD)
             {
-                DOUBLE_ASTERISK(BaseDir,item, name, Output);
+                DOUBLE_ASTERISK(BaseDir, item, name, Output, SkipExisting);
             }
             foreach (var item in SubF)
             {
                 string output = Output;
-                output=Path.Combine(output,Path.GetRelativePath(BaseDir.FullName, item.FullName));
-                PROCESS_SINGLE_FILE(item.FullName, output);
+                output = Path.Combine(output, Path.GetRelativePath(BaseDir.FullName, item.FullName));
+                PROCESS_SINGLE_FILE(item.FullName, output, SkipExisting);
             }
         }
-        static unsafe void PROCESS_SINGLE_FILE(string file,string output_file)
+        static unsafe void PROCESS_SINGLE_FILE(string file, string output_file, bool SkipExisting)
         {
             Output.SetForeground(ConsoleColor.Green);
             Output.Write(file);
@@ -143,6 +151,20 @@ namespace dds2png
             Output.WriteLine();
             try
             {
+                var _o = Path.ChangeExtension(output_file, ".png");
+                var fi = new FileInfo(_o);
+                if (!fi.Directory.Exists) fi.Directory.Create();
+                if (fi.Exists)
+                {
+                    if (SkipExisting)
+                    {
+                        Output.SetForeground(ConsoleColor.Yellow);
+                        Output.WriteLine("Skipped.");
+                        Output.ResetColor();
+                        return;
+                    }
+                    fi.Delete();
+                }
                 using var image = Pfimage.FromFile(file);
 
                 var format = image.Format switch
@@ -155,10 +177,6 @@ namespace dds2png
                 {
                     var data = Marshal.UnsafeAddrOfPinnedArrayElement(image.Data, 0);
                     var bitmap = new Bitmap(image.Width, image.Height, image.Stride, format, data);
-                    var _o = Path.ChangeExtension(output_file, ".png");
-                    var fi = new FileInfo(_o);
-                    if (!fi.Directory.Exists) fi.Directory.Create();
-                    if(fi.Exists) fi.Delete();
                     bitmap.Save(_o, System.Drawing.Imaging.ImageFormat.Png);
                 }
                 finally
@@ -174,7 +192,7 @@ namespace dds2png
                 Output.ResetColor();
             }
         }
-        static void REC_INPUT(DirectoryInfo dir, List<string> PathSegment, string _Output)
+        static void REC_INPUT(DirectoryInfo dir, List<string> PathSegment, string _Output, bool SkipExisting)
         {
             DirectoryInfo DI = dir;
             if (DI == null)
@@ -189,7 +207,7 @@ namespace dds2png
                 }
                 PathSegment.RemoveAt(0);
             }
-                var item = PathSegment.First();
+            var item = PathSegment.First();
             if (PathSegment.Count == 1)
             {
                 var fs = DI.EnumerateFiles(item);
@@ -197,7 +215,7 @@ namespace dds2png
                 {
                     string output = _Output;
                     output = Path.Combine(output, _file.Name);
-                    PROCESS_SINGLE_FILE(_file.FullName, output);
+                    PROCESS_SINGLE_FILE(_file.FullName, output, SkipExisting);
                 }
             }
             else
@@ -205,24 +223,24 @@ namespace dds2png
 
                 if (item == "**")
                 {
-                    DOUBLE_ASTERISK(DI, DI, PathSegment[1], _Output);
+                    DOUBLE_ASTERISK(DI, DI, PathSegment[1], _Output, SkipExisting);
                 }
                 else
                 {
-                    Output.WriteLine("search:"+item);
+                    Output.WriteLine("search:" + item);
                     var _folders = DI.EnumerateDirectories(item);
                     foreach (var _folder in _folders)
                     {
                         PathSegment.RemoveAt(0);
-                        REC_INPUT(_folder, PathSegment, _Output);
+                        REC_INPUT(_folder, PathSegment, _Output, SkipExisting);
                     }
                 }
             }
         }
-        static void INPUT(string input, string output)
+        static void INPUT(string input, string output, bool SkipExisting)
         {
             var segments = input.Split('/', '\\');
-            REC_INPUT(null, segments.ToList(), output);
+            REC_INPUT(null, segments.ToList(), output, SkipExisting);
         }
     }
 }
